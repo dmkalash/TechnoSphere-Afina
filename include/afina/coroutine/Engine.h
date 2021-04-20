@@ -2,12 +2,11 @@
 #define AFINA_COROUTINE_ENGINE_H
 
 #include <cstdint>
-#include <functional>
 #include <iostream>
 #include <map>
-#include <tuple>
-
 #include <setjmp.h>
+#include <tuple>
+#include <string.h>
 
 namespace Afina {
 namespace Coroutine {
@@ -17,9 +16,6 @@ namespace Coroutine {
  * Allows to run coroutine and schedule its execution. Not threadsafe
  */
 class Engine final {
-public:
-    using unblocker_func = std::function<void(Engine &)>;
-
 private:
     /**
      * A single coroutine instance which could be scheduled for execution
@@ -31,7 +27,7 @@ private:
         char *Low = nullptr;
 
         // coroutine stack end address
-        char *Hight = nullptr;
+        char *High = nullptr;
 
         // coroutine stack copy buffer
         std::tuple<char *, uint32_t> Stack = std::make_tuple(nullptr, 0);
@@ -60,19 +56,9 @@ private:
     context *alive;
 
     /**
-     * List of corountines that sleep and can't be executed
-     */
-    context *blocked;
-
-    /**
      * Context to be returned finally
      */
     context *idle_ctx;
-
-    /**
-     * Call when all coroutines are blocked
-     */
-    unblocker_func _unblocker;
 
 protected:
     /**
@@ -85,18 +71,20 @@ protected:
      */
     void Restore(context &ctx);
 
-    static void null_unblocker(Engine &) {}
+    /**
+     * Suspend current coroutine execution and execute given context
+     */
+    // void Enter(context& ctx);
 
 public:
-    Engine(unblocker_func unblocker = null_unblocker)
-        : StackBottom(0), cur_routine(nullptr), alive(nullptr), _unblocker(unblocker) {}
+    Engine() : StackBottom(0), cur_routine(nullptr), alive(nullptr) {}
     Engine(Engine &&) = delete;
     Engine(const Engine &) = delete;
 
     /**
      * Gives up current routine execution and let engine to schedule other one. It is not defined when
      * routine will get execution back, for example if there are no other coroutines then executing could
-     * be trasferred back immediately (yield turns to be noop).
+     * be transferred back immediately (yield turns to be noop).
      *
      * Also there are no guarantee what coroutine will get execution, it could be caller of the current one or
      * any other which is ready to run
@@ -107,23 +95,10 @@ public:
      * Suspend current routine and transfers control to the given one, resumes its execution from the point
      * when it has been suspended previously.
      *
-     * If routine to pass execution to is not specified (nullptr) then method should behaves like yield. In case
-     * if passed routine is the current one method does nothing
+     * If routine to pass execution to is not specified runtime will try to transfer execution back to caller
+     * of the current routine, if there is no caller then this method has same semantics as yield
      */
     void sched(void *routine);
-
-    /**
-     * Blocks current routine so that is can't be scheduled anymore
-     * If it was a currently running corountine, then do yield to select new one to be run instead.
-     *
-     * If argument is nullptr then block current coroutine
-     */
-    void block(void *coro = nullptr);
-
-    /**
-     * Put coroutine back to list of alive, so that it could be scheduled later
-     */
-    void unblock(void *coro);
 
     /**
      * Entry point into the engine. Prepare all internal mechanics and starts given function which is
@@ -142,13 +117,9 @@ public:
 
         // Start routine execution
         void *pc = run(main, std::forward<Ta>(args)...);
-
         idle_ctx = new context();
-        if (setjmp(idle_ctx->Environment) > 0) {
-            if (alive == nullptr) {
-                _unblocker(*this);
-            }
 
+        if (setjmp(idle_ctx->Environment) > 0) {
             // Here: correct finish of the coroutine section
             yield();
         } else if (pc != nullptr) {
@@ -162,7 +133,7 @@ public:
     }
 
     /**
-     * Register new coroutine. It won't receive control until scheduled explicitely or implicitly. In case of some
+     * Register new coroutine. It won't receive control until scheduled explicitly or implicitly. In case of some
      * errors function returns -1
      */
     template <typename... Ta> void *run(void (*func)(Ta...), Ta &&... args) {
