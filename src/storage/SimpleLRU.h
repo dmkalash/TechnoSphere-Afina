@@ -24,6 +24,17 @@ namespace Backend {
          _lru_tail = _lru_head.get();
      }
 
+     SimpleLRU(SimpleLRU &&cache) {
+        if (this != &cache) {
+            _lru_head = std::move(cache._lru_head);
+            _lru_tail = std::move(cache._lru_tail);
+            _max_size = cache._max_size;
+            _cur_size = cache._cur_size;
+            _lru_index = std::move(cache._lru_index);
+        }
+     }
+     // SimpleLRU(const SimpleLRU &) = delete;
+
      ~SimpleLRU() {
          _lru_index.clear();
          while (_lru_tail != _lru_head.get()) {
