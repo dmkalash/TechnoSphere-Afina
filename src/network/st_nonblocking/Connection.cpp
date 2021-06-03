@@ -121,8 +121,6 @@ void Connection::DoWrite() {
     if (amount_placed_bytes == -1) {
         throw std::runtime_error(std::string(strerror(errno)));
     }
-    _first_byte += amount_placed_bytes;
-
     _results_it = _results.begin();
     for (auto result : _results) {
         if (_first_byte < result.size()) {

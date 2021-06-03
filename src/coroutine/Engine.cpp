@@ -5,9 +5,8 @@ namespace Afina {
 namespace Coroutine {
 
 void Engine::Store(context &ctx) {
-    volatile char curr_pos;
-    ctx.Low = StackBottom;
-    ctx.High = StackBottom;
+
+    char curr_pos;
     if (&curr_pos > ctx.Low) {
         ctx.High = (char *) &curr_pos;
     } else {
@@ -15,7 +14,7 @@ void Engine::Store(context &ctx) {
     }
     std::size_t size = ctx.High - ctx.Low;
     if (size > std::get<1>(ctx.Stack)) {
-        delete std::get<0>(ctx.Stack);
+        delete[] std::get<0>(ctx.Stack);
         std::get<0>(ctx.Stack) = new char[size];
         std::get<1>(ctx.Stack) = size;
     }
@@ -44,18 +43,93 @@ void Engine::yield() {
 }
 
 void Engine::sched(void *routine_) {
-    context *ctx = static_cast<context *>(routine_);
-    if (ctx == nullptr) {
-        yield();
+
+    context *ctx = nullptr;
+    if (routine_ == nullptr) {
+        if (alive == nullptr) {
+            return;
+        }
+        if (cur_routine == alive) {
+            if (alive->next == nullptr) {
+                return;
+            }
+            ctx = alive->next;
+        } else {
+            ctx = alive;
+        }
+    } else {
+        ctx = static_cast<context *>(routine_);
     }
-    if (cur_routine != routine_ && cur_routine != idle_ctx) {
+
+    if (ctx == cur_routine || ctx->is_blocked) {
+        return;
+    }
+
+    if (cur_routine != idle_ctx) {
         if (setjmp(cur_routine->Environment) > 0) {
             return;
         }
         Store(*cur_routine);
-        cur_routine = ctx;
-        Restore(*cur_routine);
     }
+    Restore(*ctx);
+}
+
+void Engine::block(void *coroutine) {
+    context* curr_coroutine = static_cast<context *>(coroutine);
+
+    if (coroutine == nullptr) {
+        curr_coroutine = cur_routine;
+    }
+    if (curr_coroutine->is_blocked) {
+        return;
+    }
+
+    if (curr_coroutine->next != nullptr) {
+        curr_coroutine->next->prev = curr_coroutine->prev;
+    }
+    if (curr_coroutine->prev != nullptr) {
+        curr_coroutine->prev->next = curr_coroutine->next;
+    }
+    if (alive == curr_coroutine) {
+        alive = alive->next;
+    }
+
+    curr_coroutine->is_blocked = true;
+    curr_coroutine->next = blocked;
+    curr_coroutine->prev = nullptr;
+    if (blocked != nullptr) {
+        blocked->prev = curr_coroutine;
+    }
+    blocked = curr_coroutine;
+    if (coroutine == nullptr || coroutine == cur_routine) {
+        Restore(*idle_ctx);
+    }
+}
+
+
+void Engine::unblock(void* coroutine) {
+    context* curr_coroutine = static_cast<context *>(coroutine);
+    if (curr_coroutine == nullptr || !curr_coroutine->is_blocked) {
+        return;
+    }
+
+    if (curr_coroutine->next != nullptr) {
+        curr_coroutine->next->prev = curr_coroutine->prev;
+    }
+    if (curr_coroutine->prev != nullptr) {
+        curr_coroutine->prev->next = curr_coroutine->next;
+    }
+    if (blocked == curr_coroutine) {
+        blocked = blocked->next;
+    }
+
+    curr_coroutine->is_blocked = false;
+    curr_coroutine->next = alive;
+    curr_coroutine->prev = nullptr;
+    if (alive != nullptr) {
+        alive->prev = curr_coroutine;
+    }
+    alive = curr_coroutine;
 }
 
 } // namespace Coroutine
