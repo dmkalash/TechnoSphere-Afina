@@ -33,7 +33,6 @@ void Executor::Stop(bool await = false) {
     if (state == State::kStopped || state == State::kStopping) {
         return;
     }
-
     {
         std::unique_lock<std::mutex> lock(mutex);
         state = State::kStopping;
@@ -47,7 +46,7 @@ void Executor::Stop(bool await = false) {
             stop_condition.wait(lock);
         }
     }
-    if (working_threads_count == 0) {
+    if (threads.empty()) {
         state = State::kStopped;
     }
 }
@@ -80,24 +79,31 @@ void Executor::Stop(bool await = false) {
 void perform(Executor *executor) {
 
     std::unique_lock<std::mutex> lock(executor->mutex);
-    bool thread_is_useless = false;
 
     while (executor->state == Executor::State::kRun || !executor->tasks.empty()) {
-        auto now = std::chrono::system_clock::now();
-
-        while (executor->tasks.empty()) {
-            auto wait_status = executor->empty_condition.wait_until(
-                lock, now + std::chrono::milliseconds(executor->wait_time));
-            if (executor->state != Executor::State::kRun ||
-                    executor->tasks.empty() && executor->threads.size() > executor->low_watermark &&
-                    wait_status == std::cv_status::timeout) {
-                thread_is_useless = true;
-                break;
+        if (executor->tasks.empty()) {
+            auto end_time = std::chrono::system_clock::now() + std::chrono::milliseconds(executor->wait_time);
+            auto wait_status = std::cv_status::no_timeout;
+            while (true) {
+                wait_status = executor->empty_condition.wait_until(lock, end_time);
+                if (wait_status == std::cv_status::timeout) {
+                    break;
+                }
+                if (executor->state != Executor::State::kRun || !executor->tasks.empty()) {
+                    break;
+                }
+            }
+            if (wait_status == std::cv_status::timeout) {
+                if (executor->tasks.size() > executor->low_watermark) {
+                    break;
+                }
+                else {
+                    continue;
+                }
             }
         }
-
-        if (thread_is_useless) {
-            break;
+        if (executor->tasks.empty()) {
+            continue;
         }
 
         std::function<void()> func = std::move( executor->tasks.front() );
@@ -110,6 +116,8 @@ void perform(Executor *executor) {
             func();
         } catch (const std::exception &e) {
             std::cout << "Perform exception : " << e.what() << std::endl;
+        } catch(...) {
+            std::cout << "some exception" << std::endl;
         }
 
         lock.lock();
@@ -129,6 +137,7 @@ void perform(Executor *executor) {
 
     // Last alive thread
     if (executor->threads.empty() && executor->state != Executor::State::kRun) {
+        executor->state = Executor::State::kStopped;
         executor->stop_condition.notify_all();
     }
 }
