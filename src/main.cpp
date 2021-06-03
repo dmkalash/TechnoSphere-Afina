@@ -103,7 +103,9 @@ public:
         auto log = logService->select("root");
         log->warn("Stop application");
         server->Stop();
+        //log->warn("Stop in main");
         server->Join();
+        //log->warn("Join in main");
 
         storage->Stop();
         logService->Stop();

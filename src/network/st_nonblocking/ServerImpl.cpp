@@ -31,8 +31,10 @@ namespace STnonblock {
 // See Server.h
 ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl) {}
 
+#include <iostream>
 // See Server.h
 ServerImpl::~ServerImpl() {
+    std::cout << "~ServerImpl()" << std::endl;
     Stop();
     Join();
 }
@@ -88,22 +90,27 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
 
 // See Server.h
 void ServerImpl::Stop() {
+    std::cout << "Stop()" << std::endl;
     _logger->warn("Stop network service");
 
     // Wakeup threads that are sleep on epoll_wait
     if (eventfd_write(_event_fd, 1)) {
         throw std::runtime_error("Failed to wakeup workers");
     }
+//    _logger->warn("eventfd_write executed");
 
     for (auto connection : _connections) {
         shutdown(connection->_socket, SHUT_RD);
     }
+
+
 
     close(_server_socket);
 }
 
 // See Server.h
 void ServerImpl::Join() {
+    std::cout << "Join()" << std::endl;
     // Wait for work to be complete
     if (_work_thread.joinable()) {
         _work_thread.join();

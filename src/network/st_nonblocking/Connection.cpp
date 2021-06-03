@@ -151,7 +151,7 @@ void Connection::DoWrite() {
     } catch (std::runtime_error &ex) {
         _logger->error("Failed to write: {}", ex.what());
     } catch(...) {
-        _logger->error("Failed to write.";
+        _logger->error("Failed to write.");
     }
 }
 
