@@ -5,6 +5,8 @@
 #include <memory>
 #include <thread>
 
+#include "ServerImpl.h"
+
 namespace spdlog {
 class logger;
 }
@@ -27,7 +29,7 @@ namespace MTnonblock {
  */
 class Worker {
 public:
-    Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl);
+    Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl, ServerImpl* server);
     ~Worker();
 
     Worker(Worker &&);
@@ -66,6 +68,9 @@ private:
 
     // afina services
     std::shared_ptr<Afina::Storage> _pStorage;
+
+    // afina server
+    ServerImpl* _pServer;
 
     // afina services
     std::shared_ptr<Afina::Logging::Service> _pLogging;
