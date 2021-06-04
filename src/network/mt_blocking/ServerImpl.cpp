@@ -196,11 +196,6 @@ void ServerImpl::Worker(int client_socket) {
 
 // See Server.h
 void ServerImpl::OnRun(size_t tv_sec = 10, size_t tv_usec = 0) {
-    // Here is connection state
-    // - parser: parse state of the stream
-    // - command_to_execute: last command parsed out of stream
-    // - arg_remains: how many bytes to read from stream to get command argument
-    // - argument_for_command: buffer stores argument
 
     Afina::Concurrency::Executor executor("executor", 10, 8, 4 ,1000);
 

@@ -53,30 +53,6 @@ void Executor::Stop(bool await = false) {
 }
 
 
-//template <typename F, typename... Types>
-//bool Executor::Execute(F &&func, Types... args) {
-//    // Prepare "task"
-//    auto exec = std::bind(std::forward<F>(func), std::forward<Types>(args)...);
-//
-//    std::unique_lock<std::mutex> lock(this->mutex);
-//    if (state != State::kRun || tasks.size() >= max_queue_size) {
-//        return false;
-//    }
-//
-//    // Enqueue new task
-//    if (threads.size() < high_watermark && threads.size() == working_threads_count) {
-//        auto thread = std::thread([=] { return perform(this); });
-//        // auto thread = std::thread(perform, this);
-//        threads.emplace(thread.get_id(), std::move(thread));
-//    }
-//
-//    tasks.push_back(exec);
-//    empty_condition.notify_one();
-//
-//    return true;
-//}
-
-
 void perform(Executor *executor) {
 
     std::unique_lock<std::mutex> lock(executor->mutex);
