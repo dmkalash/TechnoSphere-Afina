@@ -236,11 +236,14 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         pc->Start();
         if (pc->isAlive()) {
             if (epoll_ctl(epoll_descr, EPOLL_CTL_ADD, pc->_socket, &pc->_event)) {
+                close(pc->_socket);
                 pc->OnError();
+                _connections.erase(pc);
                 delete pc;
             }
         }
         _connections.insert(pc);
+
     }
 }
 
