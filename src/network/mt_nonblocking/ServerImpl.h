@@ -1,9 +1,13 @@
 #ifndef AFINA_NETWORK_MT_NONBLOCKING_SERVER_H
 #define AFINA_NETWORK_MT_NONBLOCKING_SERVER_H
 
+#include <mutex>
+#include <set>
 #include <thread>
 #include <vector>
+#include <unordered_set>
 
+#include "Connection.h"
 #include <afina/network/Server.h>
 
 namespace spdlog {
@@ -35,11 +39,24 @@ public:
     // See Server.h
     void Join() override;
 
+    // _running_workers++
+    void IncreaseWorkerNum();
+
+    // _running_workers--
+    void DecreaseWorkerNum();
+
+    // last worker must close
+    void CloseAllConnections();
+
+    void EraseConnection(Connection* pc);
+
 protected:
     void OnRun();
     void OnNewConnection();
 
 private:
+    friend class Worker;
+
     // logger to use
     std::shared_ptr<spdlog::logger> _logger;
 
@@ -63,6 +80,15 @@ private:
 
     // threads serving read/write requests
     std::vector<Worker> _workers;
+
+    // Opened client sockets
+    std::unordered_set<Connection *> _client_sockets;
+
+    // Running workers
+    std::size_t _running_workers;
+
+    // mutex on set
+    std::mutex _sockets_mutex;
 };
 
 } // namespace MTnonblock

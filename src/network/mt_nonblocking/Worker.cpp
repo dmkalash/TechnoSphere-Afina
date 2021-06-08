@@ -21,15 +21,12 @@ namespace Network {
 namespace MTnonblock {
 
 // See Worker.h
-Worker::Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl)
-    : _pStorage(ps), _pLogging(pl), isRunning(false), _epoll_fd(-1) {
-    // TODO: implementation here
+Worker::Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl, ServerImpl* server)
+    : _pStorage(ps), _pLogging(pl), _pServer(server), isRunning(false), _epoll_fd(-1) {
 }
 
 // See Worker.h
-Worker::~Worker() {
-    // TODO: implementation here
-}
+Worker::~Worker() {}
 
 // See Worker.h
 Worker::Worker(Worker &&other) { *this = std::move(other); }
@@ -57,7 +54,9 @@ void Worker::Start(int epoll_fd) {
 }
 
 // See Worker.h
-void Worker::Stop() { isRunning = false; }
+void Worker::Stop() {
+    isRunning = false;
+}
 
 // See Worker.h
 void Worker::Join() {
@@ -70,6 +69,7 @@ void Worker::OnRun() {
     assert(_epoll_fd >= 0);
     _logger->trace("OnRun");
 
+    _pServer->IncreaseWorkerNum();
     // Process connection events
     //
     // Do not forget to use EPOLLEXCLUSIVE flag when register socket
@@ -97,7 +97,11 @@ void Worker::OnRun() {
                 pconn->OnError();
             } else if (current_event.events & EPOLLRDHUP) {
                 _logger->debug("Got EPOLLRDHUP, value of returned events: {}", current_event.events);
-                pconn->OnClose();
+                if (current_event.events & EPOLLOUT) {
+                    pconn->DoWrite();
+                } else {
+                    pconn->OnClose();
+                }
             } else {
                 // Depends on what connection wants...
                 if (current_event.events & EPOLLIN) {
@@ -116,21 +120,25 @@ void Worker::OnRun() {
                 int epoll_ctl_retval;
                 if ((epoll_ctl_retval = epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, pconn->_socket, &pconn->_event))) {
                     _logger->debug("epoll_ctl failed during connection rearm: error {}", epoll_ctl_retval);
+                    close(pconn->_socket);
                     pconn->OnError();
+                    _pServer->EraseConnection(pconn);
                     delete pconn;
                 }
             }
-            // Or delete closed one
             else {
                 if (epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, pconn->_socket, &pconn->_event)) {
                     std::cerr << "Failed to delete connection!" << std::endl;
                 }
+                close(pconn->_socket);
+                _pServer->EraseConnection(pconn);
                 delete pconn;
             }
         }
-        // TODO: Select timeout...
     }
+    _pServer->DecreaseWorkerNum();
     _logger->warn("Worker stopped");
+    _pServer->CloseAllConnections();
 }
 
 } // namespace MTnonblock
