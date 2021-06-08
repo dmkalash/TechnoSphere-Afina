@@ -103,7 +103,6 @@ public:
         auto &coroutine = alive;
         while (coroutine) {
             auto &tmp_coro = coroutine;
-            delete[] std::get<0>(tmp_coro->Stack);
             coroutine = coroutine->next;
             delete tmp_coro;
         }
