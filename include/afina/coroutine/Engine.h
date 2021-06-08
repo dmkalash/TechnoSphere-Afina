@@ -2,12 +2,13 @@
 #define AFINA_COROUTINE_ENGINE_H
 
 #include <cstdint>
-#include <functional>
 #include <iostream>
 #include <map>
-#include <tuple>
-
 #include <setjmp.h>
+#include <csetjmp>
+#include <tuple>
+#include <string.h>
+#include <functional>./
 
 namespace Afina {
 namespace Coroutine {
@@ -25,13 +26,12 @@ private:
      * A single coroutine instance which could be scheduled for execution
      * should be allocated on heap
      */
-    struct context;
-    typedef struct context {
+    struct context {
         // coroutine stack start address
         char *Low = nullptr;
 
         // coroutine stack end address
-        char *Hight = nullptr;
+        char *High = nullptr;
 
         // coroutine stack copy buffer
         std::tuple<char *, uint32_t> Stack = std::make_tuple(nullptr, 0);
@@ -39,17 +39,23 @@ private:
         // Saved coroutine context (registers)
         jmp_buf Environment;
 
+        bool is_blocked = false;
+
         // To include routine in the different lists, such as "alive", "blocked", e.t.c
-        struct context *prev = nullptr;
-        struct context *next = nullptr;
-    } context;
+        context *prev = nullptr;
+        context *next = nullptr;
+
+        ~context() {
+            delete[] std::get<0>(Stack);
+        }
+    };
 
     /**
      * Where coroutines stack begins
      */
     char *StackBottom;
 
-    /**const int&
+    /**
      * Current coroutine
      */
     context *cur_routine;
@@ -87,16 +93,33 @@ protected:
 
     static void null_unblocker(Engine &) {}
 
+
 public:
     Engine(unblocker_func unblocker = null_unblocker)
-        : StackBottom(0), cur_routine(nullptr), alive(nullptr), _unblocker(unblocker) {}
+        : StackBottom(0), cur_routine(nullptr), alive(nullptr), _unblocker(unblocker), blocked(nullptr) {}
     Engine(Engine &&) = delete;
     Engine(const Engine &) = delete;
+    ~Engine() {
+        auto &coroutine = alive;
+        while (coroutine) {
+            auto &tmp_coro = coroutine;
+            coroutine = coroutine->next;
+            delete tmp_coro;
+        }
+
+        coroutine = blocked;
+        while (coroutine != nullptr) {
+            auto &tmp_coroutine = coroutine;
+            delete[] std::get<0>(tmp_coroutine->Stack);
+            coroutine = coroutine->next;
+            delete tmp_coroutine;
+        }
+    }
 
     /**
      * Gives up current routine execution and let engine to schedule other one. It is not defined when
      * routine will get execution back, for example if there are no other coroutines then executing could
-     * be trasferred back immediately (yield turns to be noop).
+     * be transferred back immediately (yield turns to be noop).
      *
      * Also there are no guarantee what coroutine will get execution, it could be caller of the current one or
      * any other which is ready to run
@@ -107,8 +130,8 @@ public:
      * Suspend current routine and transfers control to the given one, resumes its execution from the point
      * when it has been suspended previously.
      *
-     * If routine to pass execution to is not specified (nullptr) then method should behaves like yield. In case
-     * if passed routine is the current one method does nothing
+     * If routine to pass execution to is not specified runtime will try to transfer execution back to caller
+     * of the current routine, if there is no caller then this method has same semantics as yield
      */
     void sched(void *routine);
 
@@ -144,6 +167,9 @@ public:
         void *pc = run(main, std::forward<Ta>(args)...);
 
         idle_ctx = new context();
+        idle_ctx->Low = &StackStartsHere;
+        idle_ctx->High = &StackStartsHere;
+
         if (setjmp(idle_ctx->Environment) > 0) {
             if (alive == nullptr) {
                 _unblocker(*this);
@@ -153,6 +179,7 @@ public:
             yield();
         } else if (pc != nullptr) {
             Store(*idle_ctx);
+            cur_routine = idle_ctx;
             sched(pc);
         }
 
@@ -162,10 +189,14 @@ public:
     }
 
     /**
-     * Register new coroutine. It won't receive control until scheduled explicitely or implicitly. In case of some
+     * Register new coroutine. It won't receive control until scheduled explicitly or implicitly. In case of some
      * errors function returns -1
      */
     template <typename... Ta> void *run(void (*func)(Ta...), Ta &&... args) {
+        char c;
+        return _run(&c, func, std::forward<Ta>(args)...);
+    }
+    template <typename... Ta> void *_run(char *stack, void (*func)(Ta...), Ta &&... args) {
         if (this->StackBottom == 0) {
             // Engine wasn't initialized yet
             return nullptr;
@@ -173,6 +204,8 @@ public:
 
         // New coroutine context that carries around all information enough to call function
         context *pc = new context();
+        pc->Low = stack;
+        pc->High = stack;
 
         // Store current state right here, i.e just before enter new coroutine, later, once it gets scheduled
         // execution starts here. Note that we have to acquire stack of the current function call to ensure
@@ -203,7 +236,6 @@ public:
             // current coroutine finished, and the pointer is not relevant now
             cur_routine = nullptr;
             pc->prev = pc->next = nullptr;
-            delete std::get<0>(pc->Stack);
             delete pc;
 
             // We cannot return here, as this function "returned" once already, so here we must select some other
