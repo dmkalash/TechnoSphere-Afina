@@ -1,4 +1,4 @@
-# afina
+# Аfina
 Simple caching server
 
 # Components
