@@ -42,7 +42,7 @@ void Connection::DoRead() {
     try {
         int readed_bytes = -1;
         char client_buffer[4096];
-        while ((readed_bytes = read(client_socket, client_buffer, sizeof(client_buffer))) > 0) {
+        if ((readed_bytes = read(client_socket, client_buffer, sizeof(client_buffer))) > 0) {
             _logger->debug("Have {} bytes", readed_bytes);
 
             while (readed_bytes > 0) {
@@ -83,7 +83,13 @@ void Connection::DoRead() {
 
                     result += "\r\n";
                     _results.push_back(result);
-                    _event.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLERR;
+                    if (_results.size() > MAX) {
+                        _event.events &= ~EPOLLIN;
+                    }
+                    if (!(_event.events & EPOLLOUT)) {
+                        _event.events |= EPOLLOUT;
+                    }
+                    // _event.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLERR;
 
                     command_to_execute.reset();
                     argument_for_command.resize(0);
@@ -97,7 +103,11 @@ void Connection::DoRead() {
         }
 
     } catch (std::runtime_error &ex) {
-        _logger->error("Failed process connection on descriptor {}: {}", client_socket, ex.what());
+        _logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
+        _results.push_back("ERROR\r\n");
+        if (!(_event.events & EPOLLOUT)) {
+            _event.events |= EPOLLOUT;
+        }
     }
 }
 
@@ -106,34 +116,42 @@ void Connection::DoRead() {
 void Connection::DoWrite() {
     _logger->debug("Writing. Socket: {}", _socket);
     std::size_t idx = 0;
-    struct iovec buffers[_results.size()];
+    struct iovec buffers[_results.size()] = {};
     auto _results_it = _results.begin();
 
-    for (auto i = 0; i < _results.size(); ++i, ++_results_it) {
-        buffers[i].iov_base = &(*_results_it)[0];
-        buffers[i].iov_len = (*_results_it).size();
-    }
-
-    buffers[0].iov_base = (char *) buffers[0].iov_base + _first_byte;
-    buffers[0].iov_len -= _first_byte;
-
-    auto amount_placed_bytes = writev(_socket, buffers, _results.size());
-    if (amount_placed_bytes == -1) {
-        throw std::runtime_error(std::string(strerror(errno)));
-    }
-    _results_it = _results.begin();
-    for (auto result : _results) {
-        if (_first_byte < result.size()) {
-            break;
+    try {
+        for (auto i = 0; i < _results.size(); ++i, ++_results_it) {
+            buffers[i].iov_base = &(*_results_it)[0];
+            buffers[i].iov_len = (*_results_it).size();
         }
-        _first_byte -= result.size();
-        _results_it++;
-    }
 
-    _results.erase(_results.begin(), _results_it);
+        buffers[0].iov_base = (char *) buffers[0].iov_base + _first_byte;
+        buffers[0].iov_len -= _first_byte;
 
-    if(_results.size() == 0) {
-        _event.events = EPOLLIN | EPOLLRDHUP | EPOLLERR;
+        auto amount_placed_bytes = writev(_socket, buffers, _results.size());
+        if (amount_placed_bytes == -1 && amount_placed_bytes != EAGAIN) {
+            throw std::runtime_error(std::string(strerror(errno)));
+        }
+        _first_byte += amount_placed_bytes;
+
+        _results_it = _results.begin();
+        for (auto result : _results) {
+            if (_first_byte < result.size()) {
+                break;
+            }
+            _first_byte -= result.size();
+            _results_it++;
+        }
+
+        _results.erase(_results.begin(), _results_it);
+
+        if(_results.size() == 0) {
+            _event.events = EPOLLIN | EPOLLRDHUP | EPOLLERR;
+        }
+    } catch (std::runtime_error &ex) {
+        _logger->error("Failed to write: {}", ex.what());
+    } catch(...) {
+        _logger->error("Failed to write.");
     }
 }
 

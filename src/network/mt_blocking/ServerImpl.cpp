@@ -33,7 +33,10 @@ ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps,
                        std::shared_ptr<Logging::Service> pl) : Server(ps, pl) {}
 
 // See Server.h
-ServerImpl::~ServerImpl() {}
+ServerImpl::~ServerImpl() {
+    Stop();
+    Join();
+}
 
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers = 4) {
@@ -82,18 +85,19 @@ void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers = 4)
 // See Server.h
 void ServerImpl::Stop() {
     running.store(false);
-    shutdown(_server_socket, SHUT_RDWR);
-    std::unique_lock<std::mutex> ul(_mutex);
+    std::lock_guard<std::mutex> _lock(_mutex);
     for (auto socket : _client_sockets) {
         shutdown(socket, SHUT_RD); // not RDWR
     }
+    shutdown(_server_socket, SHUT_RDWR);
     close(_server_socket);
 }
 
 // See Server.h
 void ServerImpl::Join() {
-    assert(_thread.joinable());
-    _thread.join();
+    if (_thread.joinable()) {
+        _thread.join();
+    }
 }
 
 
@@ -196,11 +200,6 @@ void ServerImpl::Worker(int client_socket) {
 
 // See Server.h
 void ServerImpl::OnRun(size_t tv_sec = 10, size_t tv_usec = 0) {
-    // Here is connection state
-    // - parser: parse state of the stream
-    // - command_to_execute: last command parsed out of stream
-    // - arg_remains: how many bytes to read from stream to get command argument
-    // - argument_for_command: buffer stores argument
 
     Afina::Concurrency::Executor executor("executor", 10, 8, 4 ,1000);
 

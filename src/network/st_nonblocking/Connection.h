@@ -46,6 +46,8 @@ private:
 
     std::size_t _first_byte = 0;
     std::list<std::string> _results;
+
+    size_t MAX = 128;
 };
 
 } // namespace STnonblock
