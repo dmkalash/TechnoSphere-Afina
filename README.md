@@ -1,12 +1,6 @@
 # afina
 Simple caching server
 
-Проект создан для курса по многопоточному программированию в Техносфере
-
-# Telegram - obsolote
-https://t.me/spheremt
-В связи с героической смертью сервиса принимаем предложения на тему, где-бы создать группу для общения...
-
 # Components
 Сервер состоит из компонент, каждый в виде отдельной статической библиотеки:
 - Allocator (include/afina/allocator/, src/allocator): менеджер памяти
@@ -28,7 +22,7 @@ https://t.me/spheremt
 [user@domain build] ./src/afina
 ```
 
-Поддерживает следующий опции:
+Поддерживает следующие опции:
 - --network <st_block, mt_block, non_block> какую использовать реализацию сети
   - *st_block*: все в одном треде
   - *mt_block*: 1 тред на каждое соединение (домашка)
@@ -43,15 +37,4 @@ echo -n -e "set foo 0 0 6\r\nfooval\r\n" | nc localhost 8080
 ```
 обратите внимание на -e и -n
 
-А вот тут подробнее про систему комманд: https://github.com/memcached/memcached/blob/master/doc/protocol.txt
-
-# Tests
-```
-make runExecuteTests && ./test/execute/runExecuteTests - собрать и запустить тесты комманд
-make runProtocolTests && ./test/protocol/runProtocolTests - собрать и запустить тесты парсера memcached протокола
-make runStorageTests && ./test/storage/runStorageTests - собрать и запустить тесты хранилиза данных
-```
-
-# TODO
-- benchmarks
-- integration tests
+Подробнее про систему комманд: https://github.com/memcached/memcached/blob/master/doc/protocol.txt
