@@ -31,8 +31,13 @@ namespace STnonblock {
 // See Server.h
 ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl) {}
 
+#include <iostream>
 // See Server.h
-ServerImpl::~ServerImpl() {}
+ServerImpl::~ServerImpl() {
+    std::cout << "~ServerImpl()" << std::endl;
+    Stop();
+    Join();
+}
 
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) {
@@ -85,18 +90,31 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
 
 // See Server.h
 void ServerImpl::Stop() {
+    std::cout << "Stop()" << std::endl;
     _logger->warn("Stop network service");
 
     // Wakeup threads that are sleep on epoll_wait
     if (eventfd_write(_event_fd, 1)) {
         throw std::runtime_error("Failed to wakeup workers");
     }
+//    _logger->warn("eventfd_write executed");
+
+    for (auto connection : _connections) {
+        shutdown(connection->_socket, SHUT_RD);
+    }
+
+
+
+    close(_server_socket);
 }
 
 // See Server.h
 void ServerImpl::Join() {
+    std::cout << "Join()" << std::endl;
     // Wait for work to be complete
-    _work_thread.join();
+    if (_work_thread.joinable()) {
+        _work_thread.join();
+    }
 }
 
 // See ServerImpl.h
@@ -161,17 +179,19 @@ void ServerImpl::OnRun() {
                 if (epoll_ctl(epoll_descr, EPOLL_CTL_DEL, pc->_socket, &pc->_event)) {
                     _logger->error("Failed to delete connection from epoll");
                 }
+                pc->OnClose();
 
                 close(pc->_socket);
-                pc->OnClose();
+                _connections.erase(pc);
 
                 delete pc;
             } else if (pc->_event.events != old_mask) {
                 if (epoll_ctl(epoll_descr, EPOLL_CTL_MOD, pc->_socket, &pc->_event)) {
                     _logger->error("Failed to change connection event mask");
+                    pc->OnClose();
 
                     close(pc->_socket);
-                    pc->OnClose();
+                    _connections.erase(pc);
 
                     delete pc;
                 }
@@ -207,7 +227,7 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         }
 
         // Register the new FD to be monitored by epoll.
-        Connection *pc = new(std::nothrow) Connection(infd);
+        Connection *pc = new Connection(infd, _logger, pStorage);
         if (pc == nullptr) {
             throw std::runtime_error("Failed to allocate connection");
         }
@@ -216,10 +236,14 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         pc->Start();
         if (pc->isAlive()) {
             if (epoll_ctl(epoll_descr, EPOLL_CTL_ADD, pc->_socket, &pc->_event)) {
+                close(pc->_socket);
                 pc->OnError();
+                _connections.erase(pc);
                 delete pc;
             }
         }
+        _connections.insert(pc);
+
     }
 }
 

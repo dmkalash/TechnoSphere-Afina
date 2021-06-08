@@ -2,9 +2,10 @@
 #define AFINA_NETWORK_ST_NONBLOCKING_SERVER_H
 
 #include <thread>
-#include <vector>
-
+#include <unordered_set>
 #include <afina/network/Server.h>
+
+#include "Connection.h"
 
 namespace spdlog {
 class logger;
@@ -51,11 +52,13 @@ private:
     // Socket to accept new connection on, shared between acceptors
     int _server_socket;
 
-    // Curstom event "device" used to wakeup workers
+    // Curstom event "device" used to wake up workers
     int _event_fd;
 
     // IO thread
     std::thread _work_thread;
+
+    std::unordered_set<Connection *> _connections;
 };
 
 } // namespace STnonblock
